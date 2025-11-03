@@ -10,11 +10,11 @@ php artisan cache:clear
 php artisan route:clear
 php artisan view:clear
 
-# Attendre que la base de données soit prête avec une méthode compatible
+# Attendre que la base de données soit prête
 echo "⏳ Vérification de la connexion à la base de données..."
 MAX_TRIES=30
 COUNT=0
-until php artisan db:show > /dev/null 2>&1 || [ $COUNT -eq $MAX_TRIES ]; do
+until php artisan migrate:status > /dev/null 2>&1 || [ $COUNT -eq $MAX_TRIES ]; do
     echo "Base de données non disponible - tentative $COUNT/$MAX_TRIES"
     COUNT=$((COUNT + 1))
     sleep 2
@@ -23,32 +23,27 @@ done
 if [ $COUNT -eq $MAX_TRIES ]; then
     echo "❌ Impossible de se connecter à la base de données après $MAX_TRIES tentatives"
     echo "Vérifiez vos variables d'environnement DB_*"
-    # Continue quand même pour voir les vraies erreurs dans les logs
+    exit 1
 fi
 
 # Générer la clé si elle n'existe pas
-if [ -z "$APP_KEY" ] || [ "$APP_KEY" = "" ]; then
+if [ -z "$APP_KEY" ] || [ "$APP_KEY" = "base64:" ] || [ "$APP_KEY" = "" ]; then
     echo "🔑 Génération de la clé d'application..."
     php artisan key:generate --force
 fi
 
 # Exécuter les migrations
 echo "📊 Exécution des migrations..."
-php artisan migrate --force || echo "⚠️  Erreur lors des migrations"
-
-# Installer Passport (clés de cryptage)
-echo "🔐 Installation de Passport..."
-if [ ! -f "storage/oauth-private.key" ] || [ ! -f "storage/oauth-public.key" ]; then
-    echo "Génération des clés Passport..."
-    php artisan passport:keys --force
+if php artisan migrate --force; then
+    echo "✅ Migrations exécutées avec succès"
 else
-    echo "Clés Passport déjà existantes"
+    echo "❌ Erreur lors des migrations"
+    exit 1
 fi
 
-# Créer les clients Passport si nécessaire
-echo "👥 Configuration des clients Passport..."
-php artisan passport:client --personal --no-interaction --name="Personal Access Client" || echo "Client personnel déjà existant"
-php artisan passport:client --password --no-interaction --name="Password Grant Client" || echo "Client password déjà existant"
+# Laravel Sanctum ne nécessite pas de clés spécifiques comme Passport
+echo "🔐 Vérification de Sanctum..."
+# Sanctum utilise automatiquement les clés d'application Laravel
 
 # Régénérer les caches en production
 if [ "$APP_ENV" = "production" ]; then
